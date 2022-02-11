@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 )
 
 type Client interface {
@@ -39,70 +38,46 @@ type Balancer struct {
 	maxLoad     int32
 	clients     []*clientWrapper
 	clientsLock *sync.Mutex
+	queue       chan *clientWrapper
 }
 
 type clientWrapper struct {
-	client       Client
-	currentValue int
-	iteration    int
-	//lock *sync.Mutex
-	ctx context.Context
+	client Client
+	ctx    context.Context
 }
 
 // New creates a new Balancer instance. It needs the server that it's going to balance for and a maximum number of work
 // chunks that can the processor process at a time. THIS IS A HARD REQUIREMENT - THE SERVICE CANNOT PROCESS MORE THAN
 // <PROVIDED NUMBER> OF WORK CHUNKS IN PARALLEL.
 func New(server Server, maxLoad int32) *Balancer {
-	ticker := time.NewTicker(200 * time.Millisecond)
 	clients := make([]*clientWrapper, 0, 100)
-	b := &Balancer{maxLoad: maxLoad, clients: clients, clientsLock: new(sync.Mutex)}
-
-	go func() {
-		for {
-			<-ticker.C
-			b.balance()
-		}
-	}()
-
-	wg := new(sync.WaitGroup)
+	b := &Balancer{maxLoad: maxLoad, clients: clients, clientsLock: new(sync.Mutex), queue: make(chan *clientWrapper, 2*maxLoad)}
 
 	go func() {
 		for {
 			b.clientsLock.Lock()
-
 			for _, v := range b.clients {
-				wg.Add(1)
-				go func(v *clientWrapper, wg *sync.WaitGroup) {
-					v.currentValue += v.iteration
-					if v.currentValue > int(b.maxLoad*1000) {
-						v.currentValue = 0
-						load := <-v.client.Workload(v.ctx)
-						fmt.Println("processing load", load, " with priority ", v.client.Weight(), " with iterration ", v.iteration)
-						server.Process(v.ctx, load)
-					}
-					wg.Done()
-				}(v, wg)
+				for i := 0; i < v.client.Weight(); i++ {
+					b.queue <- v
+				}
 			}
-			wg.Wait()
+
 			b.clientsLock.Unlock()
 		}
 	}()
+	for i := 0; i <= int(b.maxLoad); i++ {
+		index := i
+		go func() {
+			for {
+				c := <-b.queue
+				load := <-c.client.Workload(c.ctx)
+				fmt.Println("process ", index, " load ", load)
+				server.Process(c.ctx, load)
+			}
+		}()
+	}
 
 	return b
-}
-
-func (b *Balancer) balance() {
-	b.clientsLock.Lock()
-	fmt.Println("balancing")
-	sum := 0
-	for _, v := range b.clients {
-		sum += v.client.Weight()
-	}
-	for _, v := range b.clients {
-		v.iteration = int(float64(b.maxLoad) / float64(sum) * float64(v.client.Weight()) * 1000)
-		v.currentValue = 0
-	}
-	b.clientsLock.Unlock()
 }
 
 // Register a client to the balancer and start processing its work chunks through provided processor (server).
@@ -111,6 +86,6 @@ func (b *Balancer) balance() {
 func (b *Balancer) Register(ctx context.Context, c Client) {
 	fmt.Println("registration of client")
 	b.clientsLock.Lock()
-	b.clients = append(b.clients, &clientWrapper{client: c, currentValue: 0, iteration: 0, ctx: ctx})
+	b.clients = append(b.clients, &clientWrapper{client: c, ctx: ctx})
 	b.clientsLock.Unlock()
 }
