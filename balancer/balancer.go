@@ -65,7 +65,7 @@ func New(server Server, maxLoad int32) *Balancer {
 			b.clientsLock.Unlock()
 		}
 	}()
-	for i := 0; i <= int(b.maxLoad); i++ {
+	for i := 0; i < int(b.maxLoad); i++ {
 		index := i
 		go func() {
 			for {
