@@ -71,7 +71,7 @@ func New(server Server, maxLoad int32) *Balancer {
 			for {
 				c := <-b.queue
 				load := <-c.client.Workload(c.ctx)
-				fmt.Println("process ", index, " load ", load)
+				fmt.Println("process ", index, " load ", load, " weight ", c.client.Weight())
 				server.Process(c.ctx, load)
 			}
 		}()
