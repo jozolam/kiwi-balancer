@@ -22,7 +22,7 @@ func main() {
 	nbClients := 5
 	for i := 0; i < nbClients; i++ {
 		go func() {
-			workload := 500 + rand.Intn(1000)
+			workload := 100 + rand.Intn(100)
 			weight := 1 + rand.Intn(3)
 
 			time.Sleep(time.Duration(rand.Intn(5)) * time.Second)

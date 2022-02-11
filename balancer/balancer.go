@@ -3,7 +3,10 @@ package balancer
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 type Client interface {
@@ -36,7 +39,7 @@ type Server interface {
 // clients only send 25 each but can and should use the remaining capacity and send 50 again.
 type Balancer struct {
 	maxLoad     int32
-	clients     []*clientWrapper
+	clients     map[string]*clientWrapper
 	clientsLock *sync.Mutex
 	queue       chan *clientWrapper
 }
@@ -44,13 +47,15 @@ type Balancer struct {
 type clientWrapper struct {
 	client Client
 	ctx    context.Context
+	load   chan int
+	id     string
 }
 
 // New creates a new Balancer instance. It needs the server that it's going to balance for and a maximum number of work
 // chunks that can the processor process at a time. THIS IS A HARD REQUIREMENT - THE SERVICE CANNOT PROCESS MORE THAN
 // <PROVIDED NUMBER> OF WORK CHUNKS IN PARALLEL.
 func New(server Server, maxLoad int32) *Balancer {
-	clients := make([]*clientWrapper, 0, 100)
+	clients := make(map[string]*clientWrapper)
 	b := &Balancer{maxLoad: maxLoad, clients: clients, clientsLock: new(sync.Mutex), queue: make(chan *clientWrapper, 2*maxLoad)}
 
 	go func() {
@@ -70,7 +75,10 @@ func New(server Server, maxLoad int32) *Balancer {
 		go func() {
 			for {
 				c := <-b.queue
-				load := <-c.client.Workload(c.ctx)
+				load, ok := <-c.load
+				if ok == false {
+					b.unregister(c)
+				}
 				fmt.Println("process ", index, " load ", load, " weight ", c.client.Weight())
 				server.Process(c.ctx, load)
 			}
@@ -86,6 +94,19 @@ func New(server Server, maxLoad int32) *Balancer {
 func (b *Balancer) Register(ctx context.Context, c Client) {
 	fmt.Println("registration of client")
 	b.clientsLock.Lock()
-	b.clients = append(b.clients, &clientWrapper{client: c, ctx: ctx})
+	id := generateUuid()
+	b.clients[id] = &clientWrapper{client: c, ctx: ctx, load: c.Workload(ctx), id: id}
 	b.clientsLock.Unlock()
+}
+
+func (b *Balancer) unregister(cw *clientWrapper) {
+	fmt.Println("unregistration of client")
+	b.clientsLock.Lock()
+	delete(b.clients, cw.id)
+	b.clientsLock.Unlock()
+}
+
+func generateUuid() string {
+	uuidWithHyphen := uuid.New()
+	return strings.Replace(uuidWithHyphen.String(), "-", "", -1)
 }
