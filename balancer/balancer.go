@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"sync"
 
 	"github.com/google/uuid"
 )
@@ -38,10 +37,11 @@ type Server interface {
 // be served faster, finishing the work early, meaning that it would no longer be necessary that those first two
 // clients only send 25 each but can and should use the remaining capacity and send 50 again.
 type Balancer struct {
-	maxLoad     int32
-	clients     map[string]*clientWrapper
-	clientsLock *sync.Mutex
-	queue       chan *clientWrapper
+	maxLoad         int32
+	clients         map[string]*clientWrapper
+	queue           chan *clientWrapper
+	registerQueue   chan *clientWrapper
+	unregisterQueue chan *clientWrapper
 }
 
 type clientWrapper struct {
@@ -56,18 +56,31 @@ type clientWrapper struct {
 // <PROVIDED NUMBER> OF WORK CHUNKS IN PARALLEL.
 func New(server Server, maxLoad int32) *Balancer {
 	clients := make(map[string]*clientWrapper)
-	b := &Balancer{maxLoad: maxLoad, clients: clients, clientsLock: new(sync.Mutex), queue: make(chan *clientWrapper, 2*maxLoad)}
+	b := &Balancer{maxLoad: maxLoad, clients: clients, queue: make(chan *clientWrapper, 2*maxLoad), registerQueue: make(chan *clientWrapper, 3), unregisterQueue: make(chan *clientWrapper, 3)}
 
 	go func() {
 		for {
-			b.clientsLock.Lock()
-			for _, v := range b.clients {
-				for i := 0; i < v.client.Weight(); i++ {
-					b.queue <- v
+			select {
+			case cw := <-b.registerQueue:
+				fmt.Println("registration of client")
+				var id = generateUuid()
+				_, ok := b.clients[id]
+				for ok == true {
+					id = generateUuid()
+					_, ok = b.clients[id]
+				}
+				cw.id = id
+				b.clients[id] = cw
+			case cw := <-b.unregisterQueue:
+				fmt.Println("unregistration of client")
+				delete(b.clients, cw.id)
+			default:
+				for _, v := range b.clients {
+					for i := 0; i < v.client.Weight(); i++ {
+						b.queue <- v
+					}
 				}
 			}
-
-			b.clientsLock.Unlock()
 		}
 	}()
 	for i := 0; i < int(b.maxLoad); i++ {
@@ -77,7 +90,7 @@ func New(server Server, maxLoad int32) *Balancer {
 				c := <-b.queue
 				load, ok := <-c.load
 				if ok == false {
-					b.unregister(c)
+					b.unregisterQueue <- c
 				}
 				fmt.Println("process ", index, " load ", load, " weight ", c.client.Weight())
 				server.Process(c.ctx, load)
@@ -92,23 +105,7 @@ func New(server Server, maxLoad int32) *Balancer {
 // For the sake of simplicity, assume that the client has no identifier, meaning the same client can register themselves
 // multiple times.
 func (b *Balancer) Register(ctx context.Context, c Client) {
-	fmt.Println("registration of client")
-	b.clientsLock.Lock()
-	var id = generateUuid()
-	_, ok := b.clients[id]
-	for ok == true {
-		id = generateUuid()
-		_, ok = b.clients[id]
-	}
-	b.clients[id] = &clientWrapper{client: c, ctx: ctx, load: c.Workload(ctx), id: id}
-	b.clientsLock.Unlock()
-}
-
-func (b *Balancer) unregister(cw *clientWrapper) {
-	fmt.Println("unregistration of client")
-	b.clientsLock.Lock()
-	delete(b.clients, cw.id)
-	b.clientsLock.Unlock()
+	b.registerQueue <- &clientWrapper{client: c, ctx: ctx, load: c.Workload(ctx)}
 }
 
 func generateUuid() string {
