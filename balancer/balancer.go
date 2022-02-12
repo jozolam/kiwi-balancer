@@ -94,7 +94,10 @@ func New(server Server, maxLoad int32) *Balancer {
 func (b *Balancer) Register(ctx context.Context, c Client) {
 	fmt.Println("registration of client")
 	b.clientsLock.Lock()
-	id := generateUuid()
+	var id = generateUuid()
+	for ok := true; ok == true; _, ok = b.clients[id] {
+		id = generateUuid()
+	}
 	b.clients[id] = &clientWrapper{client: c, ctx: ctx, load: c.Workload(ctx), id: id}
 	b.clientsLock.Unlock()
 }
