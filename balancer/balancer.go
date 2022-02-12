@@ -95,7 +95,7 @@ func (b *Balancer) Register(ctx context.Context, c Client) {
 	fmt.Println("registration of client")
 	b.clientsLock.Lock()
 	var id = generateUuid()
-	for ok := true; ok == true; _, ok = b.clients[id] {
+	for _, ok := b.clients[id]; ok == true; _, ok = b.clients[id] {
 		id = generateUuid()
 	}
 	b.clients[id] = &clientWrapper{client: c, ctx: ctx, load: c.Workload(ctx), id: id}
