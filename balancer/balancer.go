@@ -3,10 +3,7 @@ package balancer
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 type Client interface {
@@ -111,9 +108,4 @@ func (b *Balancer) Register(ctx context.Context, c Client) {
 	for i := 0; i < w; i++ {
 		b.registerQueue <- &clientWrapper{client: c, ctx: ctx, load: c.Workload(ctx)}
 	}
-}
-
-func generateUuid() string {
-	uuidWithHyphen := uuid.New()
-	return strings.Replace(uuidWithHyphen.String(), "-", "", -1)
 }
