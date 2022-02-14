@@ -13,7 +13,7 @@ import (
 func main() {
 	rand.Seed(time.Now().UnixNano())
 
-	maxParallel := int32(2)
+	maxParallel := int32(10)
 	b := balancer.New(&service.TheExpensiveFragileService{}, maxParallel)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
@@ -23,7 +23,7 @@ func main() {
 	for i := 0; i < nbClients; i++ {
 		go func() {
 			workload := 100 + rand.Intn(100)
-			weight := 1 + rand.Intn(3)
+			weight := 1000 + rand.Intn(3)
 
 			time.Sleep(time.Duration(rand.Intn(5)) * time.Second)
 			b.Register(ctx, client.New(workload, weight))
