@@ -61,7 +61,7 @@ func New(server Server, maxLoad int32) *Balancer {
 
 	go func() {
 		for {
-			if b.maxEventCoun >= b.eventsCount { // this is very important condition otherwise we would create deadlock
+			if b.maxEventCoun > b.eventsCount { // this is very important condition otherwise we would create deadlock
 				select {
 				case cw := <-b.registerQueue: // because this is here inside a condition we are able to create backpressure on registration of new clients
 					b.queue <- cw
