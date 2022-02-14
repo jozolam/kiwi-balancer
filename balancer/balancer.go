@@ -39,7 +39,7 @@ type Balancer struct {
 	registerQueue   chan *clientWrapper
 	unregisterQueue chan bool
 	eventsCount     int
-	maxEventCoun    int
+	maxEventCount   int
 }
 
 type clientWrapper struct {
@@ -53,11 +53,11 @@ type clientWrapper struct {
 // <PROVIDED NUMBER> OF WORK CHUNKS IN PARALLEL.
 func New(server Server, maxLoad int32) *Balancer {
 	queueSize := int(maxLoad * 10)
-	b := &Balancer{queue: make(chan *clientWrapper, queueSize), registerQueue: make(chan *clientWrapper), unregisterQueue: make(chan bool), eventsCount: 0, maxEventCoun: queueSize}
+	b := &Balancer{queue: make(chan *clientWrapper, queueSize), registerQueue: make(chan *clientWrapper), unregisterQueue: make(chan bool), eventsCount: 0, maxEventCount: queueSize}
 
 	go func() {
 		for {
-			if b.maxEventCoun > b.eventsCount { // this is very important condition otherwise we would create deadlock
+			if b.maxEventCount > b.eventsCount { // this is very important condition otherwise we would create deadlock
 				select {
 				case cw := <-b.registerQueue: // because this is here inside a condition we are able to create backpressure on registration of new clients
 					b.queue <- cw
