@@ -35,8 +35,6 @@ type Server interface {
 // be served faster, finishing the work early, meaning that it would no longer be necessary that those first two
 // clients only send 25 each but can and should use the remaining capacity and send 50 again.
 type Balancer struct {
-	maxLoad         int32
-	clients         map[string]*clientWrapper
 	queue           chan *clientWrapper
 	registerQueue   chan *clientWrapper
 	unregisterQueue chan bool
@@ -48,16 +46,14 @@ type clientWrapper struct {
 	client Client
 	ctx    context.Context
 	load   chan int
-	id     string
 }
 
 // New creates a new Balancer instance. It needs the server that it's going to balance for and a maximum number of work
 // chunks that can the processor process at a time. THIS IS A HARD REQUIREMENT - THE SERVICE CANNOT PROCESS MORE THAN
 // <PROVIDED NUMBER> OF WORK CHUNKS IN PARALLEL.
 func New(server Server, maxLoad int32) *Balancer {
-	clients := make(map[string]*clientWrapper)
 	queueSize := int(maxLoad * 10)
-	b := &Balancer{maxLoad: maxLoad, clients: clients, queue: make(chan *clientWrapper, queueSize), registerQueue: make(chan *clientWrapper), unregisterQueue: make(chan bool), eventsCount: 0, maxEventCoun: queueSize}
+	b := &Balancer{queue: make(chan *clientWrapper, queueSize), registerQueue: make(chan *clientWrapper), unregisterQueue: make(chan bool), eventsCount: 0, maxEventCoun: queueSize}
 
 	go func() {
 		for {
@@ -77,7 +73,7 @@ func New(server Server, maxLoad int32) *Balancer {
 			}
 		}
 	}()
-	for i := 0; i < int(b.maxLoad); i++ {
+	for i := 0; i < int(maxLoad); i++ {
 		index := i
 		go func() {
 			for {
